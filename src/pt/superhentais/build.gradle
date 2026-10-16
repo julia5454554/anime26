@@ -1,0 +1,14 @@
+ext {
+    extName = 'SuperHentais'
+    extClass = '.SuperHentais'
+    baseUrl = 'https://superhentais.com.br'
+    extVersionCode = 3
+    isNsfw = true
+}
+
+apply plugin: "kei.plugins.extension.legacy"
+
+dependencies {
+    implementation(project(":lib:bloggerextractor"))
+    implementation(project(":lib:playlistutils"))
+}

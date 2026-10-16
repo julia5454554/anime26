@@ -1,0 +1,14 @@
+ext {
+    extName = 'Rule34Video'
+    extClass = '.Rule34Video'
+    baseUrl = 'https://rule34video.co'
+    extVersionCode = 2
+    isNsfw = true
+}
+
+apply plugin: "kei.plugins.extension.legacy"
+
+dependencies {
+    implementation(project(":lib:bloggerextractor"))
+    implementation(project(":lib:playlistutils"))
+}

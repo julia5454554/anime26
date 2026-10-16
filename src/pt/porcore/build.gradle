@@ -1,0 +1,13 @@
+ext {
+    extName = 'Porcore'
+    extClass = '.Porcore'
+    baseUrl = 'https://porcore.com'
+    extVersionCode = 1
+    isNsfw = true
+}
+
+apply plugin: "kei.plugins.extension.legacy"
+
+dependencies {
+    // Nenhuma dependência extra necessária
+}

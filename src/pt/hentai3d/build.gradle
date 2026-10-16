@@ -1,0 +1,13 @@
+ext {
+    extName = 'Hentai3D'
+    extClass = '.Hentai3D'
+    baseUrl = 'https://hentais3d.net'
+    extVersionCode = 1
+    isNsfw = true
+}
+
+apply plugin: "kei.plugins.extension.legacy"
+
+dependencies {
+    // nenhuma dependência extra
+}
