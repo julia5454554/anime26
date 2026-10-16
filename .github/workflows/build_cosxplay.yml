@@ -46,7 +46,7 @@ jobs:
           path: src/pt/cosxplay/build/outputs/apk/debug/*.apk
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: cosxplay-v1.0.${{ github.run_number }}
           name: CosXplay v1.0.${{ github.run_number }}

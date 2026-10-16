@@ -46,7 +46,7 @@ jobs:
           path: src/pt/porcore/build/outputs/apk/debug/*.apk
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: porcore-v1.0.${{ github.run_number }}
           name: Porcore v1.0.${{ github.run_number }}
