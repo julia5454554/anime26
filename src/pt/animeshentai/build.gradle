@@ -1,0 +1,13 @@
+ext {
+    extName = 'Animes Hentai'
+    extClass = '.AnimesHentai'
+    baseUrl = 'https://animeshentai.biz'
+    extVersionCode = 2
+    isNsfw = true
+}
+
+apply plugin: "kei.plugins.extension.legacy"
+
+dependencies {
+    implementation(project(":lib:bloggerextractor"))
+}
