@@ -181,9 +181,9 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: julia5454554/anime26
+          repository: julia5454554/anime26-repo
           token: ${{ secrets.BOT_PAT }}
-          ref: repo
+          ref: main
           path: repo
           fetch-depth: 0
           persist-credentials: true
@@ -191,14 +191,14 @@ jobs:
       - name: Validate Bootstrap Guard
         id: bootstrap-guard
         run: |
-          NOX_FINGERPRINT="144f44e865cbfae6bde110489ef7ec142f0b1681f627a093a218650e21db5dad"
+          MY_FINGERPRINT="1feed090bdba111cae1648fcd1a89cacdf279d42b46086a982fcc2cb3444c023"
           CURRENT_FINGERPRINT="$(jq -r '.meta.signingKeyFingerprint // empty' repo/repo.json 2>/dev/null || echo '')"
           echo "Current repo fingerprint: $CURRENT_FINGERPRINT"
-          echo "Nox official fingerprint: $NOX_FINGERPRINT"
+          echo "My official fingerprint:  $MY_FINGERPRINT"
           echo "Rebuild all parameter:    ${{ env.REBUILD_ALL }}"
 
-          if [ "$CURRENT_FINGERPRINT" != "$NOX_FINGERPRINT" ] && [ "${{ env.REBUILD_ALL }}" != "true" ]; then
-            echo "::warning::[BOOTSTRAP GUARD] O repositório público ainda possui assinatura anterior/Felipe. A publicação incremental está bloqueada para evitar repositório misto. Execute o workflow manualmente via workflow_dispatch com rebuild_all=true para realizar o bootstrap completo inicial."
+          if [ "$CURRENT_FINGERPRINT" != "$MY_FINGERPRINT" ] && [ "${{ env.REBUILD_ALL }}" != "true" ]; then
+            echo "::warning::[BOOTSTRAP GUARD] O repositório público ainda possui assinatura anterior. A publicação incremental está bloqueada para evitar repositório misto. Execute o workflow manualmente via workflow_dispatch com rebuild_all=true para realizar o bootstrap completo inicial."
             echo "skip_deploy=true" >> $GITHUB_OUTPUT
           else
             echo "skip_deploy=false" >> $GITHUB_OUTPUT
