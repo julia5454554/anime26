@@ -471,18 +471,35 @@ class PornHub :
                     "Padrão"
                 }
 
+                val isHls = format.equals("hls", ignoreCase = true) ||
+                    videoUrl.contains(".m3u8")
+
                 ParsedVideo(
                     url = videoUrl,
                     quality = quality,
-                    qualityLabel = qualityLabel,
+                    qualityLabel = if (isHls) "$qualityLabel (HLS)" else qualityLabel,
+                    isHls = isHls,
                 )
+            }
+            .let { list ->
+                // Se houver HLS, ignora o mp4 remoto (get_media): ele só
+                // serve de fallback quando o site não oferece HLS.
+                if (list.any { video -> video.isHls }) {
+                    list.filter { video -> video.isHls }
+                } else {
+                    list
+                }
+            }
+            .flatMap { video ->
+                expandRemoteMp4(video)
             }
             .distinctBy { video ->
                 video.url
             }
-            .sortedByDescending { video ->
-                video.quality
-            }
+            .sortedWith(
+                compareByDescending<ParsedVideo> { video -> video.quality }
+                    .thenByDescending { video -> video.isHls },
+            )
 
         Log.d(
             DEBUG_TAG,
@@ -515,9 +532,51 @@ class PornHub :
         // Nenhuma configuração adicional.
     }
 
+    // Entradas "mp4" do mediaDefinitions costumam apontar para um endpoint
+    // (get_media) que devolve um JSON com os mp4 reais, em vez do arquivo.
+    private fun expandRemoteMp4(video: ParsedVideo): List<ParsedVideo> {
+        if (video.isHls || !video.url.contains("get_media")) {
+            return listOf(video)
+        }
+
+        return try {
+            val body = client
+                .newCall(GET(video.url, headers))
+                .execute()
+                .use { it.body.string() }
+
+            Json { ignoreUnknownKeys = true }
+                .parseToJsonElement(body)
+                .jsonArray
+                .mapNotNull { element ->
+                    val obj = element.jsonObject
+                    val url = obj["videoUrl"]?.jsonPrimitive?.content
+                    if (url.isNullOrBlank() || !url.startsWith("http")) {
+                        return@mapNotNull null
+                    }
+                    val quality = obj["quality"]
+                        ?.jsonPrimitive
+                        ?.content
+                        ?.toIntOrNull()
+                        ?: 0
+                    ParsedVideo(
+                        url = url,
+                        quality = quality,
+                        qualityLabel = if (quality > 0) "${quality}p (MP4)" else "MP4",
+                        isHls = false,
+                    )
+                }
+                .ifEmpty { listOf(video) }
+        } catch (exception: Exception) {
+            Log.e(DEBUG_TAG, "Falha ao expandir mp4 remoto: ${exception.message}", exception)
+            listOf(video)
+        }
+    }
+
     private data class ParsedVideo(
         val url: String,
         val quality: Int,
         val qualityLabel: String,
+        val isHls: Boolean = false,
     )
 }
