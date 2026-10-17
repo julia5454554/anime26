@@ -18,7 +18,7 @@ class SuperHentais : AnimeHttpSource() {
 
     override val name = "SuperHentais"
     override val baseUrl = "https://superhentais.com.br"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

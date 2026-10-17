@@ -21,7 +21,7 @@ class PornoCarioca : AnimeHttpSource() {
 
     override val name = "PornoCarioca"
     override val baseUrl = "https://www.pornocarioca.com"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     // Cookies de verificação de idade (nomes comuns; troque pelo real quando descobrir)

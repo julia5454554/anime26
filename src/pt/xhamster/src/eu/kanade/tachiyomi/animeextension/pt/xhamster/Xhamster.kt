@@ -20,7 +20,7 @@ class Xhamster : AnimeHttpSource() {
 
     override val name = "xHamster"
     override val baseUrl = "https://xhamster.com"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     private val xhPlayer by lazy { XHPlayer(client) }

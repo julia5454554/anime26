@@ -2,7 +2,7 @@ ext {
     extName = 'SuperHentais'
     extClass = '.SuperHentais'
     baseUrl = 'https://superhentais.com.br'
-    extVersionCode = 3
+    extVersionCode = 4
     isNsfw = true
 }
 

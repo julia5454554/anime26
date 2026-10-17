@@ -18,7 +18,7 @@ class Rule34Video : AnimeHttpSource() {
 
     override val name = "Rule34Video"
     override val baseUrl = "https://rule34video.co"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     private val userAgent =

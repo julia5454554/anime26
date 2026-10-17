@@ -19,7 +19,7 @@ class CosXplay : ParsedAnimeHttpSource() {
 
     override val name = "CosXplay"
     override val baseUrl = "https://cosxplay.com"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     // Evita "Brotli decoder initialization failed" do Anikku: força gzip em vez de br.

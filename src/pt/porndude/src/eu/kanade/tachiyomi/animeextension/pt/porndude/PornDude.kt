@@ -17,7 +17,7 @@ class PornDude : AnimeHttpSource() {
 
     override val name = "3D Porn Dude"
     override val baseUrl = "https://3dporndude.com"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()

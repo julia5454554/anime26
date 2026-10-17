@@ -24,7 +24,7 @@ class JavRider : AnimeHttpSource() {
 
     override val name = "JavRider"
     override val baseUrl = "https://javrider.com"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     private val apiUrl = "$baseUrl/wp-json/wp/v2"

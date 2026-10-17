@@ -18,7 +18,7 @@ class HentaisTube : AnimeHttpSource() {
 
     override val name = "HentaisTube"
     override val baseUrl = "https://pt.hentais.tube"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     private val universalExtractor by lazy { UniversalExtractor(client) }

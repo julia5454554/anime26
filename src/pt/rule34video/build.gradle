@@ -2,7 +2,7 @@ ext {
     extName = 'Rule34Video'
     extClass = '.Rule34Video'
     baseUrl = 'https://rule34video.co'
-    extVersionCode = 2
+    extVersionCode = 3
     isNsfw = true
 }
 

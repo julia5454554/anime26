@@ -2,7 +2,7 @@ ext {
     extName = 'HentaisTube'
     extClass = '.HentaisTube'
     baseUrl = 'https://pt.hentais.tube'
-    extVersionCode = 1
+    extVersionCode = 2
     isNsfw = true
 }
 

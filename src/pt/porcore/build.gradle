@@ -2,7 +2,7 @@ ext {
     extName = 'Porcore'
     extClass = '.Porcore'
     baseUrl = 'https://porcore.com'
-    extVersionCode = 1
+    extVersionCode = 2
     isNsfw = true
 }
 

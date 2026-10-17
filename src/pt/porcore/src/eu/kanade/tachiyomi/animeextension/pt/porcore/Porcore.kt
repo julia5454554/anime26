@@ -17,7 +17,7 @@ class Porcore : AnimeHttpSource() {
 
     override val name = "Porcore"
     override val baseUrl = "https://porcore.com"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()

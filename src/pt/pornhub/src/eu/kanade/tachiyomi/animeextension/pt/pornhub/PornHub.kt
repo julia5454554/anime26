@@ -35,7 +35,7 @@ class PornHub :
 
     override val baseUrl = "https://www.pornhub.com"
 
-    override val lang = "pt"
+    override val lang = "pt-BR"
 
     override val supportsLatest = true
 

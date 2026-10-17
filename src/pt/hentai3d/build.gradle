@@ -2,7 +2,7 @@ ext {
     extName = 'Hentai3D'
     extClass = '.Hentai3D'
     baseUrl = 'https://hentais3d.net'
-    extVersionCode = 1
+    extVersionCode = 2
     isNsfw = true
 }
 

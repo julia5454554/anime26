@@ -16,7 +16,7 @@ class Hentai3D : AnimeHttpSource() {
 
     override val name = "Hentai3D"
     override val baseUrl = "https://hentais3d.net"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()

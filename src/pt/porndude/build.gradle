@@ -2,7 +2,7 @@ ext {
     extName = '3D Porn Dude'
     extClass = '.PornDude'
     baseUrl = 'https://3dporndude.com'
-    extVersionCode = 1
+    extVersionCode = 2
     isNsfw = true
 }
 
