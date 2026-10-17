@@ -66,7 +66,7 @@ jobs:
 
         # If any changes to lib/ caused on main branch, bump the extensions that use the modified lib.
       - name: Bump extensions that use a modified lib
-        if: steps.modified-libs.outputs.any_changed == 'true' && github.repository == 'Awerkori/anime-fonte-extensoes'
+        if: steps.modified-libs.outputs.any_changed == 'true' && github.repository == 'julia5454554/anime26'
         env:
           COMMIT_MESSAGE: ${{ steps.set-env.outputs.LATEST_COMMIT_MESSAGE }}
         run: |
@@ -105,7 +105,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@ad2b38190b15e4d6bdf0c97fb4fca8412226d287 # v5.3.0
         with:
-          java-version: 17
+          java-version: 21
           distribution: temurin
 
       - name: Set up Gradle
@@ -115,7 +115,7 @@ jobs:
 
       - name: Prepare signing key
         run: |
-          echo ${{ secrets.SIGNING_KEY }} | base64 -d > signingkey.jks
+          echo "${{ secrets.SIGNING_KEY }}" | base64 -d > signingkey.jks
           chmod 600 signingkey.jks
 
       - name: Build extensions (${{ matrix.chunk.number }})
@@ -134,7 +134,7 @@ jobs:
 
       - name: Upload APKs (${{ matrix.chunk.number }})
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: github.repository == 'Awerkori/anime-fonte-extensoes'
+        if: github.repository == 'julia5454554/anime26'
         with:
           name: "individual-apks-${{ matrix.chunk.number }}"
           path: "**/*.apk"
@@ -146,7 +146,7 @@ jobs:
   publish:
     name: Publish extension repo
     needs: [prepare, build]
-    if: github.repository == 'Awerkori/anime-fonte-extensoes'
+    if: github.repository == 'julia5454554/anime26'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -158,7 +158,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@ad2b38190b15e4d6bdf0c97fb4fca8412226d287 # v5.3.0
         with:
-          java-version: 17
+          java-version: 21
           distribution: temurin
 
       - name: Checkout ${{ github.ref_name }} branch
@@ -181,7 +181,7 @@ jobs:
       - name: Checkout repo branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: Awerkori/anime-extensoes
+          repository: julia5454554/anime26
           token: ${{ secrets.BOT_PAT }}
           ref: repo
           path: repo
@@ -219,5 +219,3 @@ jobs:
         with:
           message: "${{ needs.prepare.outputs.latestCommitMessage }}"
           cwd: "./repo"
-
-
