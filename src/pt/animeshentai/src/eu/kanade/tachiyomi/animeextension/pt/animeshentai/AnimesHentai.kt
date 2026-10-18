@@ -26,12 +26,12 @@ class AnimesHentai : AnimeHttpSource() {
 
     private val epNumberRegex = Regex("""Epis[oó]dio\s+(\d+(?:\.\d+)?)""", RegexOption.IGNORE_CASE)
 
-    // ===== POPULAR =====
-    override fun popularAnimeRequest(page: Int): Request = GET("$baseUrl/episodio/page/$page/")
+    // ===== POPULAR (Lista de Séries/Animes) =====
+    override fun popularAnimeRequest(page: Int): Request = GET("$baseUrl/hentai/page/$page/")
 
     override fun popularAnimeParse(response: Response): AnimesPage = parseListing(response)
 
-    // ===== LATEST =====
+    // ===== LATEST (Lista de Episódios Recentes) =====
     override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/episodio/page/$page/")
 
     override fun latestUpdatesParse(response: Response): AnimesPage = parseListing(response)
@@ -68,10 +68,12 @@ class AnimesHentai : AnimeHttpSource() {
         val link = selectFirst("div.eptitle h3 a, div.data h3 a") ?: return null
         val href = link.attr("href").takeIf { it.isNotBlank() } ?: return null
         if (!href.contains("/episodio/") && !href.contains("/hentai/")) return null
+
         val cardTitle = link.text().trim().ifBlank {
             selectFirst("div.poster img")?.attr("alt").orEmpty()
         }
         val thumb = selectFirst("div.poster img")?.attr("src").orEmpty()
+
         return SAnime.create().apply {
             setUrlWithoutDomain(href)
             title = cardTitle
@@ -80,10 +82,25 @@ class AnimesHentai : AnimeHttpSource() {
     }
 
     // ===== DETAILS =====
-    override fun animeDetailsRequest(anime: SAnime): Request = GET(anime.url)
+    override fun animeDetailsRequest(anime: SAnime): Request = GET("$baseUrl${anime.url}")
 
     override fun animeDetailsParse(response: Response): SAnime {
-        val doc = Jsoup.parse(safeBody(response), response.request.url.toString())
+        val url = response.request.url.toString()
+        val doc = Jsoup.parse(safeBody(response), url)
+
+        // Se for um episódio aberto direto pela aba "Recentes"
+        if (url.contains("/episodio/")) {
+            val rawTitle = doc.selectFirst("h1.epih1")?.text()?.trim() ?: "Episódio"
+            val cleanTitle = rawTitle.replace(" Online", "").trim()
+            return SAnime.create().apply {
+                title = cleanTitle
+                thumbnail_url = doc.selectFirst("meta[property=og:image]")?.attr("content")
+                description = doc.selectFirst("meta[property=og:description]")?.attr("content")
+                status = SAnime.UNKNOWN
+            }
+        }
+
+        // Se for uma série (aba "Popular" ou Busca)
         return SAnime.create().apply {
             title = doc.selectFirst("div.data h1")?.text()
                 ?.replace("Todos os Episodios Online", "")
@@ -98,18 +115,49 @@ class AnimesHentai : AnimeHttpSource() {
     }
 
     // ===== EPISODES =====
-    override fun episodeListRequest(anime: SAnime): Request = GET(anime.url)
+    override fun episodeListRequest(anime: SAnime): Request = GET("$baseUrl${anime.url}")
 
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val doc = Jsoup.parse(safeBody(response), response.request.url.toString())
+        val url = response.request.url.toString()
+        val doc = Jsoup.parse(safeBody(response), url)
+
+        // Se for uma página de episódio, cria um único episódio na lista
+        if (url.contains("/episodio/")) {
+            val rawTitle = doc.selectFirst("h1.epih1")?.text()?.trim() ?: "Episódio"
+            val epNum = epNumberRegex.find(rawTitle)?.groupValues?.get(1)?.toFloatOrNull() ?: -1f
+
+            // Formata o nome para "Episódio X" (ex: Episódio 1) ou o título limpo
+            val cleanName = if (epNum != -1f) {
+                if (epNum % 1.0 == 0.0) "Episódio ${epNum.toInt()}" else "Episódio $epNum"
+            } else {
+                rawTitle.replace(" Online", "").trim()
+            }
+
+            return listOf(
+                SEpisode.create().apply {
+                    this.url = url
+                    name = cleanName
+                    episode_number = epNum
+                },
+            )
+        }
+
+        // Se for uma série, puxa todos os episódios
         return doc.select("ul.episodios li").mapNotNull { li ->
             val a = li.selectFirst("div.episodiotitle a") ?: return@mapNotNull null
             val pageUrl = a.attr("href").takeIf { it.isNotBlank() } ?: return@mapNotNull null
             val epTitle = a.text().trim()
             val epNum = epNumberRegex.find(epTitle)?.groupValues?.get(1)?.toFloatOrNull() ?: -1f
+
+            val cleanName = if (epNum != -1f) {
+                if (epNum % 1.0 == 0.0) "Episódio ${epNum.toInt()}" else "Episódio $epNum"
+            } else {
+                epTitle.replace(" Online", "").trim()
+            }
+
             SEpisode.create().apply {
-                url = pageUrl
-                name = epTitle
+                this.url = pageUrl
+                name = cleanName
                 episode_number = epNum
             }
         }.reversed()
