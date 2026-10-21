@@ -18,7 +18,7 @@ class CosplayTele : AnimeHttpSource() {
 
     override val name = "CosplayTele"
     override val baseUrl = "https://cosplaytele.com"
-    override val lang = "pt"
+    override val lang = "pt-BR"
     override val supportsLatest = true
 
     private val cossoraExtractor by lazy { CossoraExtractor(client) }
