@@ -54,7 +54,7 @@ jobs:
           echo "APK encontrado em: $APK_PATH"
 
       - name: Upload do APK como artefato
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: javrider-apk-${{ github.run_number }}
           path: ${{ steps.find_apk.outputs.apk_path }}
@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload em caso de falha (logs)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-logs
           path: |
