@@ -2,11 +2,21 @@ package eu.kanade.tachiyomi.animeextension.pt.cosxplay
 
 import android.util.Log
 import fi.iki.elonen.NanoHTTPD
+import okhttp3.ConnectionPool
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.FilterInputStream
+import java.util.concurrent.TimeUnit
 
-class ProxyServer(private val client: OkHttpClient) : NanoHTTPD("127.0.0.1", 0) {
+class ProxyServer(baseClient: OkHttpClient) : NanoHTTPD("127.0.0.1", 0) {
+
+    // Pool e timeouts próprios: o streaming de vídeo não disputa conexões com a lista da extensão.
+    private val client: OkHttpClient = baseClient.newBuilder()
+        .connectionPool(ConnectionPool(3, 30, TimeUnit.SECONDS))
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
 
     override fun serve(session: IHTTPSession): Response {
         if (session.uri != "/proxy") {
@@ -48,10 +58,20 @@ class ProxyServer(private val client: OkHttpClient) : NanoHTTPD("127.0.0.1", 0) 
         val status = if (upstream.code == 206) Response.Status.PARTIAL_CONTENT else Response.Status.OK
         val length = body.contentLength()
 
+        // Fechar o stream (player abortou/seek) também fecha a resposta upstream, liberando a conexão.
+        val stream = object : FilterInputStream(body.byteStream()) {
+            override fun close() {
+                try {
+                    super.close()
+                } finally {
+                    upstream.close()
+                }
+            }
+        }
         val nano = if (length >= 0) {
-            newFixedLengthResponse(status, mime, body.byteStream(), length)
+            newFixedLengthResponse(status, mime, stream, length)
         } else {
-            newChunkedResponse(status, mime, body.byteStream())
+            newChunkedResponse(status, mime, stream)
         }
         upstream.header("Content-Range")?.let { nano.addHeader("Content-Range", it) }
         upstream.header("Accept-Ranges")?.let { nano.addHeader("Accept-Ranges", it) }

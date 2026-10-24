@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.animeextension.pt.cosxplay
 
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -9,26 +10,40 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import fi.iki.elonen.NanoHTTPD
 import okhttp3.Headers
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 class CosXplay : ParsedAnimeHttpSource() {
 
     override val name = "CosXplay"
     override val baseUrl = "https://cosxplay.com"
-    override val lang = "pt-BR"
+    override val lang = "pt"
     override val supportsLatest = true
 
-    // Evita "Brotli decoder initialization failed" do Anikku: força gzip em vez de br.
+    // "identity" = servidor responde sem compressão. Assim nenhum app (Aniyomi/Anikku)
+    // precisa descomprimir br/gzip, e o interceptor do Aniyomi não mexe no header.
     private val reqHeaders: Headers = headers.newBuilder()
-        .set("Accept-Encoding", "gzip")
+        .set("Accept-Encoding", "identity")
         .build()
 
-    private val proxyServer by lazy {
-        ProxyServer(client).also { it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false) }
+    // Timeouts para a lista nunca ficar carregando para sempre.
+    override val client: OkHttpClient = network.client.newBuilder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(60, TimeUnit.SECONDS)
+        .build()
+
+    // Um único servidor local compartilhado (antes cada instância da fonte criava um novo e nunca parava).
+    private fun getProxy(): ProxyServer = synchronized(lock) {
+        proxy?.takeIf { it.isAlive } ?: ProxyServer(client).also {
+            it.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
+            proxy = it
+        }
     }
 
     // ==================== Populares ====================
@@ -42,6 +57,20 @@ class CosXplay : ParsedAnimeHttpSource() {
 
     override fun popularAnimeFromElement(element: Element): SAnime = parseCard(element)
 
+    // Diagnóstico: se a lista vier vazia, mostra no app o que o site realmente devolveu.
+    override fun popularAnimeParse(response: Response): AnimesPage {
+        val document = response.asJsoup()
+        val animes = document.select(popularAnimeSelector()).map { popularAnimeFromElement(it) }
+        if (animes.isEmpty()) {
+            throw Exception(
+                "Sem itens. HTTP ${response.code}, enc=${response.header("Content-Encoding")}, " +
+                    "titulo='${document.title()}', html=${document.html().take(200)}",
+            )
+        }
+        val hasNext = document.selectFirst(popularAnimeNextPageSelector()) != null
+        return AnimesPage(animes, hasNext)
+    }
+
     override fun popularAnimeNextPageSelector(): String = "ul.pagination li.page-item:last-child a.page-link"
 
     // ==================== Recentes ====================
@@ -51,6 +80,8 @@ class CosXplay : ParsedAnimeHttpSource() {
     override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
 
     override fun latestUpdatesFromElement(element: Element): SAnime = popularAnimeFromElement(element)
+
+    override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
 
     override fun latestUpdatesNextPageSelector(): String = popularAnimeNextPageSelector()
 
@@ -96,7 +127,7 @@ class CosXplay : ParsedAnimeHttpSource() {
 
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
-        val port = proxyServer.listeningPort
+        val port = getProxy().listeningPort
         return document.select("video source").mapNotNull { source ->
             val src = source.attr("src")
             if (src.isEmpty()) return@mapNotNull null
@@ -114,6 +145,13 @@ class CosXplay : ParsedAnimeHttpSource() {
     override fun videoUrlParse(document: Document): String = ""
 
     // ==================== Helpers ====================
+
+    companion object {
+        private val lock = Any()
+
+        @Volatile
+        private var proxy: ProxyServer? = null
+    }
 
     private fun parseCard(element: Element): SAnime {
         val link = element.selectFirst("a.thumb")?.attr("href") ?: ""
