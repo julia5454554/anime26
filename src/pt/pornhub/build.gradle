@@ -1,13 +1,11 @@
 ext {
     extName = 'PornHub'
     extClass = '.PornHub'
-    extVersionCode = 2
+    extVersionCode = 5
     isNsfw = true
 }
 
 apply plugin: "kei.plugins.extension.legacy"
 
-dependencies {
-    // Adiciona o suporte para manipulação nativa de JSON no Kotlin
-    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0"
-}
+// Do not add kotlinx-serialization runtime dependencies here. The app already provides them, and
+// bundling a second copy breaks JSON parsing with Anikku's child-first extension class loader.

@@ -1,8 +1,5 @@
 package eu.kanade.tachiyomi.animeextension.pt.pornhub
 
-import android.app.Application
-import android.content.SharedPreferences
-import android.util.Log
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -13,22 +10,60 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.parseAs
+import keiyoushi.utils.tryParse
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.Cookie
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.Response
-import uy.kohesive.injekt.Injekt
-import uy.kohesive.injekt.api.get
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 class PornHub :
     AnimeHttpSource(),
     ConfigurableAnimeSource {
 
     companion object {
-        private const val DEBUG_TAG = "PornHubExtDebug"
+        private const val IMAGE_BASE_URL = "https://ei.phncdn.com"
+        private const val IMAGE_HOST = "ei.phncdn.com"
+
+        // Keep parsing self-contained instead of relying on the globally injected Json instance.
+        private val json = Json { ignoreUnknownKeys = true }
+
+        private val flashvarsRegex = Regex(
+            """var\s+flashvars_\d+\s*=\s*(\{.*?\});""",
+            RegexOption.DOT_MATCHES_ALL,
+        )
+        private val categoriesRegex = Regex(
+            """['"]categories_in_video['"]\s*:\s*['"]([^'"]+)['"]""",
+        )
+        private val publishedDateRegex = Regex(
+            """['"]video_date_published['"]\s*:\s*['"](\d{8})['"]""",
+        )
+        private val jsonLdAuthorRegex = Regex(
+            """"author"\s*:\s*"([^"]+)"""",
+        )
+        private val stableImagePathRegex = Regex(
+            """.*\.(?:jpe?g|png|webp)$""",
+            RegexOption.IGNORE_CASE,
+        )
+        private val streamResolutionRegex = Regex(
+            """/(\d{3,4})P[_\d]""",
+            RegexOption.IGNORE_CASE,
+        )
+        private val publishedDateFormat = SimpleDateFormat("yyyyMMdd", Locale.ROOT).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
     }
 
     override val name = "PornHub"
@@ -39,73 +74,8 @@ class PornHub :
 
     override val supportsLatest = true
 
-    private val preferences: SharedPreferences by lazy {
-        Injekt
-            .get<Application>()
-            .getSharedPreferences(
-                "source_$id",
-                0x0000,
-            )
-    }
-
     override fun headersBuilder(): Headers.Builder = super.headersBuilder()
-        .add(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/120.0.0.0 Safari/537.36",
-        )
-        .add(
-            "Cookie",
-            "accessAgeDisclaimerPH=1; " +
-                "hasVisited=1; " +
-                "age_verified=1",
-        )
-        .add(
-            "Referer",
-            "$baseUrl/",
-        )
-
-    override val client: okhttp3.OkHttpClient
-        get() {
-            return super.client
-                .newBuilder()
-                .addInterceptor { chain ->
-                    val request = chain.request()
-
-                    Log.d(
-                        DEBUG_TAG,
-                        "-> Requisição: ${request.url}",
-                    )
-
-                    try {
-                        val response = chain.proceed(request)
-
-                        Log.d(
-                            DEBUG_TAG,
-                            "<- Resposta: ${response.code} " +
-                                "para ${request.url}",
-                        )
-
-                        response
-                    } catch (exception: Exception) {
-                        Log.e(
-                            DEBUG_TAG,
-                            "!! Falha de rede em ${request.url}: " +
-                                "${exception.javaClass.simpleName} - " +
-                                exception.message,
-                            exception,
-                        )
-
-                        throw exception
-                    }
-                }
-                .build()
-        }
-
-    // -------------------------------------------------------------------------
-    // POPULAR
-    // -------------------------------------------------------------------------
+        .add("Referer", "$baseUrl/")
 
     override fun popularAnimeRequest(page: Int): Request = GET(
         "$baseUrl/video?page=$page",
@@ -116,467 +86,343 @@ class PornHub :
         val document = response.asJsoup()
 
         val animeList = document
-            .select(
-                "li[data-video-id], " +
-                    "li.pcVideoListItem, " +
-                    "div.ph-thumbnail-component",
-            )
+            .select("li.pcVideoListItem[data-video-vkey], li[data-video-id][data-video-vkey]")
             .mapNotNull { element ->
                 val linkElement = element
                     .selectFirst("a[href*=/view_video.php]")
                     ?: return@mapNotNull null
 
-                val href = linkElement.attr("href")
-
-                val videoUrl = if (href.startsWith("http")) {
-                    href.substringAfter(baseUrl)
-                } else {
-                    href
-                }
-
-                val titleElement = element.selectFirst(
-                    "a.thumbnailTitle, " +
-                        "span.title, " +
-                        "a[title]",
-                )
-
-                val title = titleElement
+                val imageElement = element.selectFirst("img")
+                val title = element
+                    .selectFirst("span.title a[href], a.thumbnailTitle[href], a[href][title]")
                     ?.text()
                     ?.ifEmpty {
-                        titleElement.attr("title")
+                        element.selectFirst("a[href][title]")?.attr("title").orEmpty()
                     }
                     ?.ifEmpty {
-                        "Vídeo"
+                        imageElement?.attr("alt").orEmpty()
                     }
-                    ?: element
-                        .selectFirst("img")
-                        ?.attr("alt")
-                        ?.ifEmpty {
-                            "Vídeo"
-                        }
-                    ?: "Vídeo"
+                    ?.takeIf { it.isNotEmpty() }
+                    ?: return@mapNotNull null
 
                 val duration = element
-                    .selectFirst(
-                        "span.bgEffect.time, " +
-                            "var.duration",
-                    )
+                    .selectFirst("var.duration, span.bgEffect.time")
                     ?.text()
                     .orEmpty()
 
-                val thumbnailUrl = element
-                    .selectFirst("img")
-                    ?.let { image ->
-                        image.attr("abs:data-mediumthumb")
-                            .ifEmpty {
-                                image.attr("abs:data-src")
-                            }
-                            .ifEmpty {
-                                image.attr("abs:data-thumb_url")
-                            }
-                            .ifEmpty {
-                                image.attr("abs:data-poster")
-                            }
-                            .ifEmpty {
-                                image.attr("abs:src")
-                            }
-                    }
-
                 SAnime.create().apply {
-                    url = videoUrl
-
+                    setUrlWithoutDomain(linkElement.absUrl("href"))
                     this.title = if (duration.isNotEmpty()) {
                         "$title ($duration)"
                     } else {
                         title
                     }
-
-                    thumbnail_url = thumbnailUrl
+                    thumbnail_url = imageElement?.let(::extractListingThumbnail)
                 }
             }
 
-        val hasNextPage = document
-            .select(
-                "div.page_next a[href], " +
-                    "li.page_next a[href]",
-            )
-            .isNotEmpty()
+        val hasNextPage = document.selectFirst("div.page_next a[href], li.page_next a[href]") != null
 
-        return AnimesPage(
-            animeList,
-            hasNextPage,
-        )
+        return AnimesPage(animeList, hasNextPage)
     }
-
-    // -------------------------------------------------------------------------
-    // RECENTES
-    // -------------------------------------------------------------------------
 
     override fun latestUpdatesRequest(page: Int): Request = popularAnimeRequest(page)
 
     override fun latestUpdatesParse(response: Response): AnimesPage = popularAnimeParse(response)
-
-    // -------------------------------------------------------------------------
-    // PESQUISA
-    // -------------------------------------------------------------------------
 
     override fun searchAnimeRequest(
         page: Int,
         query: String,
         filters: AnimeFilterList,
     ): Request {
-        val encodedQuery = query.replace(
-            oldValue = " ",
-            newValue = "+",
-        )
+        val url = "$baseUrl/video/search"
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("search", query.trim())
+            .addQueryParameter("page", page.toString())
+            .build()
 
-        return GET(
-            "$baseUrl/video/search?" +
-                "search=$encodedQuery&page=$page",
-            headers,
-        )
+        return GET(url, headers)
     }
 
     override fun searchAnimeParse(response: Response): AnimesPage = popularAnimeParse(response)
 
-    // -------------------------------------------------------------------------
-    // DETALHES
-    // -------------------------------------------------------------------------
-
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
-
-        val title = document
-            .selectFirst("h1.title span, h1.title, h1")
-            ?.text()
-            ?.ifEmpty {
-                "Vídeo"
-            }
-            ?: "Vídeo"
-
-        val uploader = document
-            .selectFirst(
-                "a.uploaderLink, " +
-                    "div.userInfo a, " +
-                    ".usernameWrap a",
-            )
-            ?.text()
-            ?.ifEmpty {
-                "Desconhecido"
-            }
-            ?: "Desconhecido"
-
+        val flashvars = parseFlashvars(document)
+        val title = extractTitle(document)
+        val uploader = extractUploader(document)
         val views = document
-            .selectFirst(
-                "div.videoViews span.count, " +
-                    "div.videoViews, " +
-                    "span.views",
-            )
+            .selectFirst("div.ratingInfo div.views span.count")
             ?.text()
             .orEmpty()
 
-        val thumbnailUrl = document
-            .selectFirst("meta[property=og:image]")
-            ?.attr("content")
-            ?.ifEmpty {
-                null
-            }
-            ?: document
-                .selectFirst("img.mainImage, #player img")
-                ?.attr("abs:src")
-
         return SAnime.create().apply {
+            setUrlWithoutDomain(response.request.url.toString())
             this.title = title
-
+            author = uploader
+            artist = uploader
+            thumbnail_url = extractDetailThumbnail(document, flashvars)
+            genre = extractCategories(document)?.joinToString()
             description = buildString {
                 append("Uploader: ")
-                append(uploader)
+                append(uploader ?: "Desconhecido")
 
                 if (views.isNotEmpty()) {
                     append("\nVisualizações: ")
                     append(views)
                 }
             }
-
-            thumbnail_url = thumbnailUrl
             status = SAnime.COMPLETED
         }
     }
 
-    // -------------------------------------------------------------------------
-    // EPISÓDIOS
-    // -------------------------------------------------------------------------
-
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val requestUrl = response.request.url
-
-        val relativeUrl = buildString {
-            append(requestUrl.encodedPath)
-
-            requestUrl.query?.let { query ->
-                append("?")
-                append(query)
-            }
-        }
+        val document = response.asJsoup()
 
         val episode = SEpisode.create().apply {
-            url = relativeUrl
+            setUrlWithoutDomain(response.request.url.toString())
             name = "Assistir Vídeo"
             episode_number = 1f
-            date_upload = System.currentTimeMillis()
+            date_upload = extractPublishedDate(document)
         }
 
         return listOf(episode)
     }
 
-    // -------------------------------------------------------------------------
-    // VÍDEOS
-    // -------------------------------------------------------------------------
-
     override fun videoListParse(response: Response): List<Video> {
         val document = response.asJsoup()
+        val flashvars = parseFlashvars(document)
 
-        Log.d(
-            DEBUG_TAG,
-            "URL da requisição: ${response.request.url}",
-        )
+        val remoteVideos = extractRemoteMediaVideos(flashvars, response)
+        val directVideos = extractDirectVideos(document)
+        val hlsVideos = extractHlsVideos(flashvars)
 
-        Log.d(
-            DEBUG_TAG,
-            "Status HTTP: ${response.code}",
-        )
-
-        val scriptData = document
-            .select("script")
-            .map { script ->
-                script.data()
-            }
-            .firstOrNull { script ->
-                script.contains("mediaDefinitions")
-            }
-            ?: throw Exception(
-                "Nenhum script contendo mediaDefinitions foi encontrado.",
-            )
-
-        Log.d(
-            DEBUG_TAG,
-            "Script encontrado " +
-                "(${scriptData.length} caracteres).",
-        )
-
-        val flashvarsRegex = Regex(
-            pattern = """var\s+flashvars_\d+\s*=\s*(\{.*?\});""",
-            options = setOf(
-                RegexOption.DOT_MATCHES_ALL,
-            ),
-        )
-
-        val match = flashvarsRegex.find(scriptData)
-            ?: throw Exception(
-                "Variável flashvars_* não encontrada.",
-            )
-
-        val jsonString = match
-            .groupValues
-            .getOrNull(1)
-            ?.trim()
-            ?: throw Exception(
-                "JSON do flashvars não encontrado.",
-            )
-
-        if (!jsonString.startsWith("{")) {
-            throw Exception(
-                "JSON inválido extraído do script.",
-            )
-        }
-
-        val json = Json {
-            ignoreUnknownKeys = true
-        }
-
-        val flashvars = try {
-            json
-                .parseToJsonElement(jsonString)
-                .jsonObject
-        } catch (exception: Exception) {
-            Log.e(
-                DEBUG_TAG,
-                "Falha ao interpretar JSON.",
-                exception,
-            )
-
-            throw Exception(
-                "Erro ao interpretar JSON: " +
-                    exception.message,
-                exception,
-            )
-        }
-
-        val mediaDefinitions = flashvars["mediaDefinitions"]
-            ?.jsonArray
-            ?: throw Exception(
-                "mediaDefinitions não encontrado no JSON.",
-            )
-
-        Log.d(
-            DEBUG_TAG,
-            "mediaDefinitions encontrados: " +
-                mediaDefinitions.size,
-        )
-
-        val videos = mediaDefinitions
-            .mapNotNull { mediaElement ->
-                val mediaObject = mediaElement.jsonObject
-
-                val videoUrl = runCatching {
-                    mediaObject["videoUrl"]
-                        ?.jsonPrimitive
-                        ?.content
-                }.getOrNull()
-
-                val qualityText = runCatching {
-                    mediaObject["quality"]
-                        ?.jsonPrimitive
-                        ?.content
-                }.getOrNull()
-
-                val format = runCatching {
-                    mediaObject["format"]
-                        ?.jsonPrimitive
-                        ?.content
-                }.getOrNull()
-
-                Log.d(
-                    DEBUG_TAG,
-                    "format=$format " +
-                        "quality=$qualityText " +
-                        "url=${videoUrl?.take(120)}",
-                )
-
-                if (videoUrl.isNullOrBlank()) {
-                    return@mapNotNull null
-                }
-
-                if (!videoUrl.startsWith("http")) {
-                    return@mapNotNull null
-                }
-
-                val quality = qualityText
-                    ?.toIntOrNull()
-                    ?: 0
-
-                val qualityLabel = if (quality > 0) {
-                    "${quality}p"
-                } else {
-                    "Padrão"
-                }
-
-                val isHls = format.equals("hls", ignoreCase = true) ||
-                    videoUrl.contains(".m3u8")
-
-                ParsedVideo(
-                    url = videoUrl,
-                    quality = quality,
-                    qualityLabel = if (isHls) "$qualityLabel (HLS)" else qualityLabel,
-                    isHls = isHls,
-                )
-            }
-            .let { list ->
-                // Se houver HLS, ignora o mp4 remoto (get_media): ele só
-                // serve de fallback quando o site não oferece HLS.
-                if (list.any { video -> video.isHls }) {
-                    list.filter { video -> video.isHls }
-                } else {
-                    list
-                }
-            }
-            .flatMap { video ->
-                expandRemoteMp4(video)
-            }
+        return (remoteVideos + directVideos + hlsVideos)
             .distinctBy { video ->
-                video.url
+                videoResolution(video)?.let { "quality:$it" } ?: video.videoUrl
             }
-            .sortedWith(
-                compareByDescending<ParsedVideo> { video -> video.quality }
-                    .thenByDescending { video -> video.isHls },
-            )
-
-        Log.d(
-            DEBUG_TAG,
-            "Vídeos válidos encontrados: ${videos.size}",
-        )
-
-        if (videos.isEmpty()) {
-            throw Exception(
-                "Nenhum vídeo foi extraído de mediaDefinitions.",
-            )
-        }
-
-        return videos.map { video ->
-            Video(
-                video.url,
-                video.qualityLabel,
-                video.url,
-                headers,
-            )
-        }
+            .sortedByDescending { videoResolution(it) ?: 0 }
     }
 
-    // -------------------------------------------------------------------------
-    // CONFIGURAÇÕES
-    // -------------------------------------------------------------------------
+    override fun setupPreferenceScreen(screen: PreferenceScreen) = Unit
 
-    override fun setupPreferenceScreen(
-        screen: PreferenceScreen,
-    ) {
-        // Nenhuma configuração adicional.
+    private fun extractListingThumbnail(image: Element): String? {
+        stableThumbnailUrl(image.attr("data-path"))?.let { return it }
+
+        return image.attr("abs:data-image")
+            .ifEmpty { image.attr("abs:data-mediumthumb") }
+            .ifEmpty { image.attr("abs:data-thumb_url") }
+            .ifEmpty { image.attr("abs:data-src") }
+            .ifEmpty { image.attr("abs:src") }
+            .takeIf { it.isNotEmpty() }
     }
 
-    // Entradas "mp4" do mediaDefinitions costumam apontar para um endpoint
-    // (get_media) que devolve um JSON com os mp4 reais, em vez do arquivo.
-    private fun expandRemoteMp4(video: ParsedVideo): List<ParsedVideo> {
-        if (video.isHls || !video.url.contains("get_media")) {
-            return listOf(video)
+    private fun stableThumbnailUrl(dataPath: String?): String? {
+        if (dataPath.isNullOrBlank()) return null
+
+        val normalized = dataPath.replace("{index}", "0")
+        val absoluteUrl = when {
+            normalized.startsWith("https://") -> normalized
+            normalized.startsWith("//") -> "https:$normalized"
+            normalized.startsWith("/") -> "$IMAGE_BASE_URL$normalized"
+            else -> return null
         }
 
-        return try {
-            val body = client
-                .newCall(GET(video.url, headers))
-                .execute()
-                .use { it.body.string() }
+        val parsedUrl = absoluteUrl.toHttpUrlOrNull() ?: return null
+        if (parsedUrl.host != IMAGE_HOST) return null
 
-            Json { ignoreUnknownKeys = true }
-                .parseToJsonElement(body)
-                .jsonArray
-                .mapNotNull { element ->
-                    val obj = element.jsonObject
-                    val url = obj["videoUrl"]?.jsonPrimitive?.content
-                    if (url.isNullOrBlank() || !url.startsWith("http")) {
-                        return@mapNotNull null
+        val sourcePath = parsedUrl.encodedPath.substringBefore("/plain/")
+        if (!stableImagePathRegex.matches(sourcePath)) return null
+
+        return parsedUrl
+            .newBuilder()
+            .encodedPath(sourcePath)
+            .query(null)
+            .fragment(null)
+            .build()
+            .toString()
+    }
+
+    private fun extractDetailThumbnail(document: Document, flashvars: Flashvars?): String? = document.selectFirst("meta[name=twitter:image]")?.attr("content")?.takeIf { it.isNotEmpty() }
+        ?: document.selectFirst("meta[property=og:image]")?.attr("content")?.takeIf { it.isNotEmpty() }
+        ?: flashvars?.imageUrl
+
+    private fun extractRemoteMediaVideos(flashvars: Flashvars?, pageResponse: Response): List<Video> {
+        val mediaEndpoint = flashvars
+            ?.mediaDefinitions
+            .orEmpty()
+            .firstOrNull { definition ->
+                definition.format.equals("mp4", ignoreCase = true) &&
+                    definition.videoUrl?.contains("/video/get_media") == true
+            }
+            ?.videoUrl
+            ?: return emptyList()
+
+        return runCatching {
+            val endpointUrl = mediaEndpoint.toHttpUrl()
+            val requestHeaders = headers.newBuilder()
+                .apply {
+                    val sessionCookies = buildList {
+                        addAll(runCatching { Cookie.parseAll(endpointUrl, pageResponse.headers) }.getOrDefault(emptyList()))
+                        addAll(client.cookieJar.loadForRequest(endpointUrl))
                     }
-                    val quality = obj["quality"]
-                        ?.jsonPrimitive
-                        ?.content
-                        ?.toIntOrNull()
-                        ?: 0
-                    ParsedVideo(
-                        url = url,
-                        quality = quality,
-                        qualityLabel = if (quality > 0) "${quality}p (MP4)" else "MP4",
-                        isHls = false,
-                    )
+                        .filter { it.value.isNotEmpty() }
+                        .distinctBy { it.name }
+
+                    if (sessionCookies.isNotEmpty()) {
+                        set("Cookie", sessionCookies.joinToString("; ") { "${it.name}=${it.value}" })
+                    }
                 }
-                .ifEmpty { listOf(video) }
-        } catch (exception: Exception) {
-            Log.e(DEBUG_TAG, "Falha ao expandir mp4 remoto: ${exception.message}", exception)
-            listOf(video)
+                .build()
+
+            client.newCall(GET(mediaEndpoint, requestHeaders)).execute().use { response ->
+                if (!response.isSuccessful) return@use emptyList()
+
+                response
+                    .parseAs<List<MediaDefinition>>(json)
+                    .mapNotNull { definition ->
+                        val url = definition.videoUrl?.takeIf { it.startsWith("http") } ?: return@mapNotNull null
+                        if (!url.substringBefore('?').endsWith(".mp4", ignoreCase = true)) return@mapNotNull null
+
+                        val resolution = definition.resolution
+                            ?: streamResolutionRegex.find(url)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                            ?: return@mapNotNull null
+
+                        Video(
+                            url = url,
+                            quality = "${resolution}p (MP4)",
+                            videoUrl = url,
+                            headers = headers,
+                        )
+                    }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun extractDirectVideos(document: Document): List<Video> {
+        val urls = document
+            .select("meta[property=og:video], meta[name=twitter:player:stream]")
+            .map { it.attr("content").trim() }
+            .filter { url ->
+                url.isNotEmpty() && url.substringBefore('?').endsWith(".mp4", ignoreCase = true)
+            }
+            .distinct()
+
+        return urls.map { url ->
+            val resolution = streamResolutionRegex
+                .find(url)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.toIntOrNull()
+
+            Video(
+                url = url,
+                quality = if (resolution != null) "${resolution}p (MP4)" else "MP4 (direto)",
+                videoUrl = url,
+                headers = headers,
+            )
         }
     }
 
-    private data class ParsedVideo(
-        val url: String,
-        val quality: Int,
-        val qualityLabel: String,
-        val isHls: Boolean = false,
+    private fun videoResolution(video: Video): Int? = video.quality
+        .filter { it.isDigit() }
+        .toIntOrNull()
+
+    private val MediaDefinition.resolution: Int?
+        get() = (quality as? JsonPrimitive)?.content?.toIntOrNull() ?: height
+
+    private fun extractHlsVideos(flashvars: Flashvars?): List<Video> {
+        return flashvars
+            ?.mediaDefinitions
+            .orEmpty()
+            .mapNotNull { definition ->
+                val url = definition.videoUrl?.takeIf { it.startsWith("http") } ?: return@mapNotNull null
+                val isHls = definition.format.equals("hls", ignoreCase = true) ||
+                    url.contains(".m3u8", ignoreCase = true)
+                if (!isHls) return@mapNotNull null
+
+                val resolution = definition.resolution
+                    ?: streamResolutionRegex.find(url)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+                Video(
+                    url = url,
+                    quality = if (resolution != null) "${resolution}p (HLS)" else "HLS",
+                    videoUrl = url,
+                    headers = headers,
+                )
+            }
+            .distinctBy { it.videoUrl }
+            .sortedByDescending { video ->
+                video.quality.filter { it.isDigit() }.toIntOrNull() ?: 0
+            }
+    }
+
+    private fun parseFlashvars(document: Document): Flashvars? = document
+        .select("script")
+        .asSequence()
+        .mapNotNull { script ->
+            flashvarsRegex.find(script.data())?.groupValues?.getOrNull(1)
+        }
+        .mapNotNull { jsonString ->
+            runCatching { jsonString.parseAs<Flashvars>(json) }.getOrNull()
+        }
+        .firstOrNull()
+
+    private fun extractTitle(document: Document): String = document.selectFirst("h1.title span.inlineFree")?.text()
+        ?: document.selectFirst("meta[property=og:title]")?.attr("content")
+        ?: error("Título do vídeo não encontrado")
+
+    private fun extractUploader(document: Document): String? {
+        val jsonLd = document.selectFirst("script[type=application/ld+json]")?.data().orEmpty()
+        return jsonLdAuthorRegex.find(jsonLd)?.groupValues?.getOrNull(1)
+    }
+
+    private fun extractCategories(document: Document): List<String>? {
+        val script = document
+            .select("script")
+            .asSequence()
+            .map { it.data() }
+            .firstOrNull { it.contains("categories_in_video") }
+            ?: return null
+
+        val categories = categoriesRegex
+            .find(script)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?: return null
+
+        return categories
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    }
+
+    private fun extractPublishedDate(document: Document): Long {
+        val script = document
+            .select("script")
+            .asSequence()
+            .map { it.data() }
+            .firstOrNull { it.contains("video_date_published") }
+            ?: return 0L
+
+        val date = publishedDateRegex.find(script)?.groupValues?.getOrNull(1)
+        return publishedDateFormat.tryParse(date)
+    }
+
+    @Serializable
+    private class Flashvars(
+        val mediaDefinitions: List<MediaDefinition> = emptyList(),
+        @SerialName("image_url")
+        val imageUrl: String? = null,
+    )
+
+    @Serializable
+    private class MediaDefinition(
+        val format: String? = null,
+        val quality: JsonElement? = null,
+        val videoUrl: String? = null,
+        val height: Int? = null,
     )
 }
