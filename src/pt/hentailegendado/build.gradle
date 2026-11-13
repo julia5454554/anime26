@@ -2,7 +2,7 @@ ext {
     extName = 'Hentai Legendado'
     extClass = '.HentaiLegendado'
     baseUrl = 'https://hentailegendado.com'
-    extVersionCode = 2
+    extVersionCode = 3
     isNsfw = true
 }
 
