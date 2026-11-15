@@ -1,0 +1,14 @@
+// language: Groovy, file: src/pt/xanimu/build.gradle
+
+ext {
+    extName = 'Xanimu'
+    extClass = '.Xanimu'
+    extVersionCode = 2
+    isNsfw = true
+}
+
+apply plugin: "kei.plugins.extension.legacy"
+
+dependencies {
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+}
