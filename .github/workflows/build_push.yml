@@ -51,10 +51,8 @@ jobs:
         run: |
           echo "LATEST_COMMIT_MESSAGE<<{delimiter}
           $(git log -1 --pretty=%B)
-
           Built on commit: $(git log -1 --pretty=%H)
           {delimiter}" >> $GITHUB_OUTPUT
-
       - name: Find lib changes
         id: modified-libs
         uses: tj-actions/changed-files@9426d40962ed5378910ee2e21d5f8c6fcbf2dd96 # v47.0.6
@@ -75,7 +73,6 @@ jobs:
           chmod +x ./.github/scripts/bump-versions.py
           ./.github/scripts/bump-versions.py "$COMMIT_MESSAGE" ${{ steps.modified-libs.outputs.all_changed_files }}
           git push
-
       - name: Get last successful CI commit
         uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1 # v5.0.1
         with:
@@ -86,7 +83,6 @@ jobs:
         name: Create output matrices
         run: |
           python ./.github/scripts/generate-build-matrices.py "$NX_BASE" Release
-
   build:
     name: Build extensions (${{ matrix.chunk.number }})
     needs: prepare
@@ -117,7 +113,6 @@ jobs:
         run: |
           echo "${{ secrets.SIGNING_KEY }}" | base64 -d > signingkey.jks
           chmod 600 signingkey.jks
-
       - name: Build extensions (${{ matrix.chunk.number }})
         env:
           MODULES: ${{ join(matrix.chunk.modules, ' ') }}
@@ -131,7 +126,6 @@ jobs:
           TMDB_API: ${{ secrets.TMDB_API }}
         run: |
           ./gradlew $MODULES
-
       - name: Upload APKs (${{ matrix.chunk.number }})
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: github.repository == 'julia5454554/anime26'
@@ -170,14 +164,20 @@ jobs:
           persist-credentials: false
 
       - name: Create repo artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           cd ${{ github.ref_name }}
           python ./.github/scripts/move-built-apks.py
-          INSPECTOR_LINK="$(curl -s "https://api.github.com/repos/komikku-app/aniyomi-extensions-inspector/releases/latest" | jq -r '.assets[0].browser_download_url')"
-          curl -L "$INSPECTOR_LINK" -o ./Inspector.jar
+          INSPECTOR_LINK="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/komikku-app/aniyomi-extensions-inspector/releases/latest" | jq -r '.assets[0].browser_download_url // empty')"
+          if [ -z "$INSPECTOR_LINK" ]; then
+            echo "::error::Não foi possível obter o link de download do Inspector.jar"
+            exit 1
+          fi
+          echo "Inspector: $INSPECTOR_LINK"
+          curl -fL "$INSPECTOR_LINK" -o ./Inspector.jar
           java -jar ./Inspector.jar "repo/apk" "output.json" "tmp"
           python ./.github/scripts/create-repo.py
-
       - name: Checkout repo branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -196,14 +196,12 @@ jobs:
           echo "Current repo fingerprint: $CURRENT_FINGERPRINT"
           echo "My official fingerprint:  $MY_FINGERPRINT"
           echo "Rebuild all parameter:    ${{ env.REBUILD_ALL }}"
-
           if [ "$CURRENT_FINGERPRINT" != "$MY_FINGERPRINT" ] && [ "${{ env.REBUILD_ALL }}" != "true" ]; then
             echo "::warning::[BOOTSTRAP GUARD] O repositório público ainda possui assinatura anterior. A publicação incremental está bloqueada para evitar repositório misto. Execute o workflow manualmente via workflow_dispatch com rebuild_all=true para realizar o bootstrap completo inicial."
             echo "skip_deploy=true" >> $GITHUB_OUTPUT
           else
             echo "skip_deploy=false" >> $GITHUB_OUTPUT
           fi
-
       - name: Merge repo
         if: steps.bootstrap-guard.outputs.skip_deploy != 'true'
         env:
@@ -212,7 +210,6 @@ jobs:
           cp "${{ github.ref_name }}/.github/repo.json.nox" repo/repo.json
           cd repo
           python ../${{ github.ref_name }}/.github/scripts/merge-repo.py "$DELETE" '${{ github.ref_name }}/repo'
-
       - name: Deploy repo
         if: steps.bootstrap-guard.outputs.skip_deploy != 'true'
         uses: EndBug/add-and-commit@290ea2c423ad77ca9c62ae0f5b224379612c0321 # v10.0.0
